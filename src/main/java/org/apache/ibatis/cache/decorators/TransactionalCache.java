@@ -40,8 +40,20 @@ public class TransactionalCache implements Cache {
   private static final Log log = LogFactory.getLog(TransactionalCache.class);
 
   private final Cache delegate;
+
+  /**
+   * 事务结束，直接销毁 不是写入真正的缓存
+   */
   private boolean clearOnCommit;
+
+  /**
+   * 事务中产生的数据保存起来，commit后 写入 真正的缓存结点，回滚直接删除
+   */
   private final Map<Object, Object> entriesToAddOnCommit;
+
+  /**
+   * 缓存查询未命中的数据
+   */
   private final Set<Object> entriesMissedInCache;
 
   public TransactionalCache(Cache delegate) {
@@ -77,6 +89,7 @@ public class TransactionalCache implements Cache {
 
   @Override
   public void putObject(Object key, Object object) {
+    // 暂存到
     entriesToAddOnCommit.put(key, object);
   }
 
@@ -91,6 +104,9 @@ public class TransactionalCache implements Cache {
     entriesToAddOnCommit.clear();
   }
 
+  /**
+   * 事务提交
+   */
   public void commit() {
     if (clearOnCommit) {
       delegate.clear();
@@ -99,6 +115,9 @@ public class TransactionalCache implements Cache {
     reset();
   }
 
+  /**
+   * 事务回滚
+   */
   public void rollback() {
     unlockMissedEntries();
     reset();
@@ -110,6 +129,9 @@ public class TransactionalCache implements Cache {
     entriesMissedInCache.clear();
   }
 
+  /**
+   * 将未缓存的数据写入缓存
+   */
   private void flushPendingEntries() {
     for (Map.Entry<Object, Object> entry : entriesToAddOnCommit.entrySet()) {
       delegate.putObject(entry.getKey(), entry.getValue());
@@ -121,6 +143,9 @@ public class TransactionalCache implements Cache {
     }
   }
 
+  /**
+   * 删除缓存未命中的数据，主要是为了blockingCache中的数据 释放锁
+   */
   private void unlockMissedEntries() {
     for (Object entry : entriesMissedInCache) {
       try {

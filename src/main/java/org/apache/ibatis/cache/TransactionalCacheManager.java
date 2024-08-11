@@ -24,8 +24,11 @@ import org.apache.ibatis.util.MapUtil;
 /**
  * @author Clinton Begin
  */
-public class TransactionalCacheManager {
+public class  TransactionalCacheManager {
 
+  /**
+   * 一个事务有多个缓存，面门模式，对外提供
+   */
   private final Map<Cache, TransactionalCache> transactionalCaches = new HashMap<>();
 
   public void clear(Cache cache) {

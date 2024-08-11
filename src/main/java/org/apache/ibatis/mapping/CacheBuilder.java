@@ -36,15 +36,33 @@ import org.apache.ibatis.reflection.SystemMetaObject;
 
 /**
  * @author Clinton Begin
+ * cache的构建类
  */
 public class CacheBuilder {
   private final String id;
+
+  /**
+   * 默认的缓存实现
+   */
   private Class<? extends Cache> implementation;
+
+  /**
+   * 装饰者模式
+   */
   private final List<Class<? extends Cache>> decorators;
+  /**
+   * 缓存大小
+   */
   private Integer size;
+  /**
+   * 定时清理
+   */
   private Long clearInterval;
   private boolean readWrite;
   private Properties properties;
+  /**
+   * 是否阻塞
+   */
   private boolean blocking;
 
   public CacheBuilder(String id) {
@@ -106,6 +124,12 @@ public class CacheBuilder {
     return cache;
   }
 
+
+  /**
+   * 默认的存储方式
+   * 简单的map存储
+   * 装饰者模式，不管有没有配置其他装饰者，都会有lru装饰者
+   */
   private void setDefaultImplementations() {
     if (implementation == null) {
       implementation = PerpetualCache.class;
@@ -115,6 +139,13 @@ public class CacheBuilder {
     }
   }
 
+  /**
+   * clearInterval 决定 定时器缓存
+   * readWrite 决定 序列化缓存
+   *
+   * @param cache
+   * @return
+   */
   private Cache setStandardDecorators(Cache cache) {
     try {
       MetaObject metaCache = SystemMetaObject.forObject(cache);
