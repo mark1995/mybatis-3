@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.ibatis.cache.Cache;
 import org.apache.ibatis.cache.CacheException;
+import org.apache.ibatis.cache.impl.PerpetualCache;
 
 /**
  * <p>
@@ -38,6 +39,12 @@ public class BlockingCache implements Cache {
 
   private long timeout;
   private final Cache delegate;
+  /**
+   * 为啥要使用 CountDownLatch来替换掉 ReentrantLock
+   * 1. 可重入锁 无法被 remove掉，会造成oom, 一旦创建就无法被remove,因为unlock和remove两个操作都会造成释放的临界区锁
+   * 2. 这里使用countDownLatch 结合 putIfAbsent语义 来保障，谁初始化了 key的 countdownlatch谁就进入的临界区，
+   * 3. 没有初始化成功的线程，拿着被初始化的countdownLatch等待折被唤醒
+   */
   private final ConcurrentHashMap<Object, CountDownLatch> locks;
 
   public BlockingCache(Cache delegate) {
@@ -64,6 +71,18 @@ public class BlockingCache implements Cache {
     }
   }
 
+  /**
+   * 为啥会有不符合常理的 releaseLock
+   * 一般 lock / unlock 都是成对出现的，为啥这里的unlock操作会有判断条件
+   * 1. 结合cache在mybatis中的整体作用，或者引入的背景来看，主要是防止多个会话有相同的sql同时向数据库发出请求
+   * 2. 保障只有一个会话能请求数据库，其他会话等待结果，不管结果是啥，
+   * 3. 不再缓存，第一个真正执行sql的会话 也是当前只有锁的线程（countdownLatch的创建者），在缓存中没有获得结果，那么他就有责任去执行下面的逻辑
+   * 去拿到真正的结果，不管结果是空值还是啥，拿到结果以后，将结果放入缓存中，也就是上面的putObject方法，所以在putObject方法中，才调用了真正的释放锁操作
+   * @param key
+   *          The key
+   *
+   * @return
+   */
   @Override
   public Object getObject(Object key) {
     acquireLock(key);
@@ -124,4 +143,28 @@ public class BlockingCache implements Cache {
   public void setTimeout(long timeout) {
     this.timeout = timeout;
   }
+
+
+  public static void main(String[] args) {
+    Cache cache = new BlockingCache(new PerpetualCache("zone"));
+
+    CountDownLatch latch = new CountDownLatch(3);
+    for (int i = 0; i < 3; i++) {
+      new Thread(new Runnable() {
+        @Override
+        public void run() {
+           cache.getObject("test");
+           latch.countDown();
+        }
+      }).start();
+    }
+    try {
+      latch.await();
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+
+
 }
